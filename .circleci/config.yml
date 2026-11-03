@@ -1,24 +1,74 @@
-Set up a simple CircleCI starter config for the `KognitivnayaBuena/spring-petclinic` repo. The goal is a first pipeline that passes, which I can build on later.
+version: 2.1
 
-1. Check that the `circleci` CLI is installed with `circleci version`. If it isn't, stop and ask me to install it (https://circleci.com/docs/local-cli). Continue when I confirm it is installed.
+# Spring PetClinic — Java 17 (pom.xml / build.gradle set java.version = 17).
+# One project, built two ways like the existing GitHub Actions workflows
+# (maven-build.yml and gradle-build.yml). Maven is the primary build and
+# runs tests through CircleCI Smarter Testing; the Gradle job mirrors
+# `./gradlew build` from the existing CI.
 
-2. Inspect the repo, skipping gitignored and generated files. For each project, find its language, runtime version, package manager (from lockfiles or build files) and real install, build, test and lint commands. Only count a folder as a separate project if existing CI or root scripts test it.
+jobs:
+  maven-build-test:
+    docker:
+      - image: cimg/openjdk:17.0
+    resource_class: medium+
+    environment:
+      MAVEN_OPTS: -Xmx1536m
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - maven-v1-{{ checksum "pom.xml" }}
+            - maven-v1-
+      - run:
+          name: Install dependencies
+          command: ./mvnw -B -q dependency:go-offline -DskipTests
+      - save_cache:
+          key: maven-v1-{{ checksum "pom.xml" }}
+          paths:
+            - ~/.m2/repository
+      - run:
+          name: Build
+          command: ./mvnw -B -DskipTests package
+      - run:
+          name: Test (Smarter Testing)
+          command: circleci testsuite run "maven-unit-tests"
+      - run:
+          name: Lint (spring-javaformat + nohttp checkstyle)
+          command: ./mvnw -B spring-javaformat:validate checkstyle:check@nohttp-checkstyle-validation
+      - store_test_results:
+          path: test-results
+      - store_artifacts:
+          path: target/surefire-reports
+          destination: surefire-reports
 
-3. Write .circleci/config.yml (version 2.1):
-   - One job per project on a Linux Docker image: checkout, restore cache, install, save cache, then build, test and lint.
-   - Use the repo's own build, test and lint commands. Skip any step the project doesn't have. If it has none, add a placeholder job and say so.
-   - Use `cimg/<language>:<major.minor>` images (cimg has no major-only tags like `cimg/node:24`), with the newest version the repo allows, or the version existing CI uses.
-   - Cache on the lockfile checksum, if there is a lockfile.
-   - Use tools already in the image rather than apt-get.
-   - Leave out matrices, other operating systems and deploy steps for now.
-   - Don't add secrets. If tests need an env var or a database, add it and tell me.
+  gradle-build:
+    docker:
+      - image: cimg/openjdk:17.0
+    resource_class: medium+
+    environment:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false -Xmx1536m
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - gradle-v1-{{ checksum "build.gradle" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+            - gradle-v1-
+      - run:
+          name: Install dependencies
+          command: ./gradlew dependencies --quiet
+      - save_cache:
+          key: gradle-v1-{{ checksum "build.gradle" }}-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+          paths:
+            - ~/.gradle/caches
+            - ~/.gradle/wrapper
+      - run:
+          name: Build, test and lint (same as existing CI)
+          command: ./gradlew build
+      - store_test_results:
+          path: build/test-results/test
 
-4. Run the tests with CircleCI Smarter Testing (https://circleci.com/docs/guides/test/smarter-testing-overview/). Skip any project without tests.
-   - Write `.circleci/test-suites.yml` with one suite per test suite. Each suite has a `discover` command that lists the test files, a `run` command that runs the files it gets and store test results to view tests results and insights
-   - In the job, replace the test command with `circleci testsuite run "<suite name>"`
-   - Don't set any suite `options`. Keep test impact analysis, dynamic test splitting, dynamic parallelism and auto-rerun off.
-   - Run `circleci testsuite doctor "<suite name>"` for each suite. Fix what it reports and run it again until all checks pass.
-
-5. Validate with `circleci config validate` and fix any errors.
-
-6. Commit the new config and test suites to the `circleci-project-setup` branch and push.
+workflows:
+  build-and-test:
+    jobs:
+      - maven-build-test
+      - gradle-build
