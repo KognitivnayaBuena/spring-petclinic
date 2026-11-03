@@ -1,0 +1,14 @@
+# CircleCI Smarter Testing suites.
+# Test impact analysis, dynamic splitting, dynamic parallelism and
+# auto-rerun are intentionally left off (no `options` block).
+name: maven-unit-tests
+discover: find src/test/java -type f \( -name '*Test.java' -o -name '*Tests.java' \) | sort
+run: |
+  classes=$(for f in << test.atoms >>; do basename "$f" .java; done | paste -sd, -)
+  ./mvnw -B test -Dtest="$classes" -Dsurefire.failIfNoSpecifiedTests=false
+  status=$?
+  mkdir -p "<< outputs.junit-directory >>"
+  cp target/surefire-reports/TEST-*.xml "<< outputs.junit-directory >>/" 2>/dev/null || true
+  exit $status
+outputs:
+  junit-directory: test-results/junit
