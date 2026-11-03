@@ -22,3 +22,4 @@ Set up a simple CircleCI starter config for the `KognitivnayaBuena/spring-petcli
 5. Validate with `circleci config validate` and fix any errors.
 
 6. Commit the new config and test suites to the `circleci-project-setup` branch and push.
+
