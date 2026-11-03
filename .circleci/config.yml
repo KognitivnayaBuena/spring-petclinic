@@ -72,3 +72,6 @@ workflows:
     jobs:
       - maven-build-test
       - gradle-build
+  deploy:
+    jobs:
+      - gradle-build
